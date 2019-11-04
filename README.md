@@ -156,6 +156,7 @@ Register a new middleware.
     the database.
   * `'receive'`: Received a message from a client
   * `'reply'`: About to send a non-error reply to a client message
+  * `'sendPresence'`: About to send presence information to a client
 * `fn` _(Function(context, callback))_
   Call this function at the time specified by `action`.
   * `context` will always have the following properties:
@@ -303,6 +304,20 @@ Get a read-only snapshot of a document at the requested version.
   }
   ```
 
+`connection.getPresence(collection, id, presenceId): Presence;`
+Get a [`Presence`](#class-sharedbpresence) instance that can be used to subscribe to presence information to other clients, and create instances of local presence.
+
+* `channel` _(String)_
+  Presence channel to subscribe to
+
+`connection.getPresence(collection, id, presenceId): Presence;`
+Get a special [`Presence`](#class-sharedbpresence) instance that can be used to subscribe to presence information to other clients, and create instances of local presence. This is tied to a `Doc`, and all presence will be automatically transformed against ops to keep presence current. Note that the `Doc` must be of a type that supports presence.
+
+* `collection` _(String)_
+  Document collection
+* `id` _(String)_
+  Document ID
+
 ### Class: `ShareDB.Doc`
 
 `doc.type` _(String_)
@@ -349,6 +364,9 @@ The document was deleted. Document contents before deletion are passed in as an 
 `doc.on('error', function(err) {...})`
 There was an error fetching the document or applying an operation.
 
+`doc.on('presence', function(id, presence) {...})`
+A remote client has sent presence information. `id` is an ID provided by the remote client, and `presence` is the presence data, whose structure will depend on document's OT type.
+
 `doc.removeListener(eventName, listener)`
 Removes any listener you added with `doc.on`. `eventName` should be one of `'load'`, `'create'`, `'before op'`, `'op'`, `'del'`, or `'error'`. `listener` should be the function you passed in as the second argument to `on`. Note that both `on` and `removeListener` are inherited from [EventEmitter](https://nodejs.org/api/events.html#events_class_eventemitter).
 
@@ -378,6 +396,12 @@ Invokes the given callback function after
  * all pending fetch, subscribe, and unsubscribe requests have been resolved.
 
 Note that `whenNothingPending` does NOT wait for pending `model.query()` calls.
+
+`doc.subscribeToPresence([function(err) {...}])`
+Subscribes to presence updates sent by other clients, emitting `presence` events (see above).
+
+`doc.unsubscribeFromPresence(function(err) {...})`
+Unsubscribe from presence updates sent by other clients, and stop receiving `presence` events (see above).
 
 ### Class: `ShareDB.Query`
 
@@ -628,6 +652,67 @@ var connectionInfo = getUserPermissions();
 // 'connection' middleware.
 var connection = backend.connect(null, connectionInfo);
 ```
+
+### Class: `ShareDB.Presence`
+
+Representation of the presence data associated with a given channel, or - in the case of `getDocPresence` - presence data associated with a `Doc` instance.
+
+#### `subscribe`
+
+```javascript
+presence.subscribe(callback);
+```
+
+Subscribe to presence updates from other clients. Note that presence can be submitted without subscribing, but remote clients will not be able to re-request presence if not subscribed.
+
+* `callback` _Function_: a callback with the signature `function (error: Error): void;`
+
+#### `unsubscribe`
+
+```javascript
+presence.unsubscribe(callback);
+```
+
+Unsubscribe from presence updates from remote clients.
+
+* `callback` _Function_: a callback with the signature `function (error: Error): void;`
+
+#### `create`
+
+```javascript
+presence.create(presenceId): LocalPresence;
+```
+
+Create an instance of [`LocalPresence`](#class-sharedblocalpresence), which can be used to represent local presence. Many or none such local presences may exist on a `Presence` instance.
+
+* `presenceId` _string_: a unique ID representing the local presence
+
+#### `destroy`
+
+```javascript
+presence.destroy(callback);
+```
+
+Updates all remote clients with a `null` presence. Then unsubscribes and destroys the local instance of the presence by de-registering all the `Doc` hooks it listens to, and removes it from the `Connection` cache, so that it can be garbage-collected. This should be called when you are done with a presence, and no longer need to use it to fire updates.
+
+This method is automatically called when calling `doc.destroy`.
+
+* `callback` _Function_: a callback with the signature `function (error: Error): void;`
+
+### Class: `ShareDB.LocalPresence`
+
+`LocalPresence` represents the presence of the local client in a given `Doc`. For example, this might be the position of a caret in a text document; which field has been highlighted in a complex JSON object; etc. Multiple presences may exist per `Doc` even on the same client.
+
+#### `submit`
+
+```javascript
+localPresence.submit(presence, callback);
+```
+
+Update the local representation of presence, and broadcast that presence to any other document presence subscribers.
+
+* `presence` _Object_: the presence object to broadcast. The structure of this will depend on the OT type
+* `callback` _Function_: a callback with the signature `function (error: Error): void;`
 
 ### Logging
 
